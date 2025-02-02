@@ -3,6 +3,8 @@ using Hangfire.Common;
 using Hangfire.Server;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,13 +19,31 @@ builder.Services.AddHangfire(config => config
     .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
     .UseSimpleAssemblyNameTypeSerializer()
     .UseRecommendedSerializerSettings()
+    .UseSerializerSettings(new JsonSerializerSettings
+    {
+        TypeNameHandling = TypeNameHandling.Auto,
+        ConstructorHandling = ConstructorHandling.AllowNonPublicDefaultConstructor,
+        ContractResolver = new DefaultContractResolver
+        {
+            NamingStrategy = new CamelCaseNamingStrategy()
+        }
+    })
     .UseSqlServerStorage(builder.Configuration.GetConnectionString("Hangfire")));
 
 // Configure Hangfire Server
-builder.Services.AddHangfireServer();
+builder.Services.AddHangfireServer(options => {
+    options.Queues = ["critical", "default"]; // Process these queues
+    options.ServerName = "AssakerWorker"; // Name of the server    
+});
+
+builder.Services.AddHangfireServer(options => {
+    options.Queues = new[] { "io-bound" };
+    options.ServerName = "IO_Worker";
+});
 
 // Register services
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+builder.Services.AddScoped<IJobManager, HangfireJobManager>();
 builder.Services.AddScoped<IBackgroundJob<RecurringCommand>, RecurringJobService>();
 builder.Services.AddScoped<IBackgroundJob<DelayedCommand>, DelayedJobService>();
 
@@ -52,10 +72,19 @@ app.UseHangfireDashboard();
 app.MapControllers();
 
 // Seed recurring job
-RecurringJob.AddOrUpdate<IBackgroundJob<RecurringCommand>>(
-    "recurring-demo",
-    x => x.Execute(new RecurringCommand(), new JobContext(999, "system")),
-    Cron.Minutely);
+
+using (var scope = app.Services.CreateScope())
+{
+    var jobManager = scope.ServiceProvider.GetRequiredService<IJobManager>();
+    
+    jobManager.AddOrUpdateRecurring(
+        "recurring-demo",
+        new RecurringCommand(),
+        new JobContext(999, "system"),
+        "*/1 * * * *"
+    );
+}
+
 
 app.Run();
 
@@ -78,8 +107,20 @@ public class UnitOfWork : IUnitOfWork
 }
 
 // JobContext.cs
-[Serializable]
-public record JobContext(int UserId, string CorrelationId);
+[JsonObject(MemberSerialization = MemberSerialization.OptIn)]
+public record JobContext(
+    [property: JsonProperty] int UserId,
+    [property: JsonProperty] string CorrelationId,
+    [property: JsonProperty]
+    IDictionary<string, string> Headers
+)
+{
+    [JsonConstructor]
+    public JobContext(int userId, string correlationId) 
+        : this(userId, correlationId, new Dictionary<string, string>())
+    {
+    }
+}
 
 public class ContextAwareJobActivator : JobActivator
 {
@@ -224,6 +265,72 @@ public static class FilterExtensions
     }
 }
 
+public interface IJobManager
+{
+    void Schedule<TCommand>(TCommand command, JobContext context, TimeSpan delay) 
+        where TCommand : IRequest;
+    
+    void AddOrUpdateRecurring<TCommand>(
+        string jobId, 
+        TCommand command, 
+        JobContext context,
+        string cron,
+        string queue = "default"
+    ) where TCommand : IRequest;
+}
+
+public class HangfireJobManager : IJobManager
+{
+    private readonly IBackgroundJobClient _backgroundJob;
+    private readonly IRecurringJobManager _recurringJobs;
+    private readonly ILogger<HangfireJobManager> _logger;
+
+    public HangfireJobManager(
+        IBackgroundJobClient backgroundJob,
+        IRecurringJobManager recurringJobs,
+        ILogger<HangfireJobManager> logger)
+    {
+        _backgroundJob = backgroundJob;
+        _recurringJobs = recurringJobs;
+        _logger = logger;
+    }
+
+    public void Schedule<TCommand>(TCommand command, JobContext context, TimeSpan delay) 
+        where TCommand : IRequest
+    {
+        _backgroundJob.Schedule<IBackgroundJob<TCommand>>(
+            x => x.Execute(command, context),
+            delay
+        );
+
+        _logger.LogInformation("Scheduled {CommandType} with correlation {CorrelationId}", typeof(TCommand).Name,
+            context.CorrelationId);
+    }
+
+    public void AddOrUpdateRecurring<TCommand>(
+        string jobId, 
+        TCommand command, 
+        JobContext context,
+        string cron,
+        string queue = "default"
+    ) where TCommand : IRequest
+    {
+        _recurringJobs.AddOrUpdate<IBackgroundJob<TCommand>>(
+            jobId,
+            queue,
+            x => x.Execute(command, context),
+            cron,
+            new RecurringJobOptions 
+            {
+                TimeZone = TimeZoneInfo.Utc,
+                MisfireHandling = MisfireHandlingMode.Relaxed
+            }
+        );
+        
+        _logger.LogInformation("Updated recurring job {JobId} with schedule {Cron}", jobId, cron);
+    }
+}
+
 // Jobs/BackgroundJobBase.cs
 public interface IBackgroundJob<TCommand> where TCommand : IRequest
 {
@@ -289,30 +396,32 @@ public class DelayedJobService : BackgroundJobBase<DelayedCommand>
 [Route("[controller]")]
 public class JobController : ControllerBase
 {
-    private readonly IBackgroundJobClient _backgroundJob;
+    private readonly IJobManager _jobManager;
     private readonly IUnitOfWork _uow;
 
-    public JobController(
-        IBackgroundJobClient backgroundJob,
-        IUnitOfWork uow)
+    public JobController(IUnitOfWork uow, IJobManager jobManager)
     {
-        _backgroundJob = backgroundJob;
         _uow = uow;
+        _jobManager = jobManager;
     }
 
     [HttpPost("delayed")]
     public IActionResult CreateDelayedJob(string data, int userId, string correlationId)
     {
         Console.WriteLine($"#Creating DelayedJob: uow in controller: {_uow.GetHashCode()}");
-        
+    
         var context = new JobContext(
-            UserId: userId,
-            CorrelationId: correlationId
+            userId: userId,
+            correlationId: correlationId
         );
+        
+        context.Headers.Add("X-Request-Token", new Guid().ToString());
 
-        _backgroundJob.Schedule<IBackgroundJob<DelayedCommand>>(
-            x => x.Execute(new DelayedCommand(data), context),
-            TimeSpan.FromSeconds(5));
+        _jobManager.Schedule(
+            new DelayedCommand(data), 
+            context,
+            TimeSpan.FromSeconds(5)
+        );
 
         return Ok(new { context.CorrelationId });
     }
