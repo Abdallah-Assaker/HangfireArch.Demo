@@ -275,8 +275,6 @@ public class DelayedJobService : BackgroundJobBase<DelayedCommand>
 
     protected override async Task Handle(DelayedCommand command)
     {
-        Console.WriteLine($"uow in DelayedCommand.Handle(): {_uow.GetHashCode()}");
-        
         Console.WriteLine($"#DelayedJob: Processing delayed job ({command.Data}) for user {_uow.UserId}, [{_uow.GetHashCode()}]");
         await Task.Delay(100);
         

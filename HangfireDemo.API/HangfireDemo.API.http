@@ -1,6 +1,6 @@
 @HangfireDemo.API_HostAddress = http://localhost:5122
 
-GET {{HangfireDemo.API_HostAddress}}/weatherforecast/
+POST http://localhost:5122/Job/delayed?data=HelloWorld&userId=1&correlationId=1
 Accept: application/json
 
 ###
