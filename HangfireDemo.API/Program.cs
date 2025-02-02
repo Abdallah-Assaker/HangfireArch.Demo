@@ -79,6 +79,27 @@ public class UnitOfWork : IUnitOfWork
 [Serializable]
 public record JobContext(int UserId, string CorrelationId);
 
+public class FilterScopeJobActivator : JobActivator
+{
+    private readonly PerformingContext _context;
+
+    public FilterScopeJobActivator(PerformingContext context)
+    {
+        _context = context;
+    }
+
+    public override object ActivateJob(Type jobType)
+    {
+        if (_context.Items.TryGetValue("HangfireScope", out var scope) && 
+            scope is IServiceScope serviceScope)
+        {
+            return serviceScope.ServiceProvider.GetRequiredService(jobType);
+        }
+        
+        return base.ActivateJob(jobType);
+    }
+}
+
 // Filters/UnitOfWorkFilter.cs
 public class UnitOfWorkFilter : JobFilterAttribute, IServerFilter
 {
@@ -93,6 +114,9 @@ public class UnitOfWorkFilter : JobFilterAttribute, IServerFilter
     {
         var scope = _scopeFactory.CreateScope();
         context.Items["HangfireScope"] = scope;
+        
+        // Override job activator
+        context.Items["JobActivator"] = new FilterScopeJobActivator(context);
         
         var jobContext = context.GetAJobParameter<JobContext>();
         var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
