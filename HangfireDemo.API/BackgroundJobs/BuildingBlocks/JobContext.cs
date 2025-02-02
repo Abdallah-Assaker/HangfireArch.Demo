@@ -1,6 +1,6 @@
 using Newtonsoft.Json;
 
-namespace HangfireDemo.API;
+namespace HangfireDemo.API.BackgroundJobs.BuildingBlocks;
 
 [JsonObject(MemberSerialization = MemberSerialization.OptIn)]
 public record JobContext(

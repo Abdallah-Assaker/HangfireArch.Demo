@@ -1,3 +1,4 @@
+using HangfireDemo.API.BackgroundJobs.BuildingBlocks;
 using HangfireDemo.API.Commands;
 using HangfireDemo.API.Data.Abstract;
 using HangfireDemo.API.Services;

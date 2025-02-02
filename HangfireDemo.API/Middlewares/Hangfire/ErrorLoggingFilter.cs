@@ -1,5 +1,6 @@
 using Hangfire.Common;
 using Hangfire.Server;
+using HangfireDemo.API.BackgroundJobs.BuildingBlocks;
 using HangfireDemo.API.Helpers.Extensions;
 
 namespace HangfireDemo.API.Middlewares.Hangfire;
