@@ -82,53 +82,44 @@ public record JobContext(int UserId, string CorrelationId);
 // Filters/UnitOfWorkFilter.cs
 public class UnitOfWorkFilter : JobFilterAttribute, IServerFilter
 {
-    // private readonly IServiceScopeFactory _scopeFactory;
-    //
-    // public UnitOfWorkFilter(IServiceScopeFactory scopeFactory)
-    // {
-    //     _scopeFactory = scopeFactory;
-    // }
-    
-    private readonly IUnitOfWork _uow;
+    private readonly IServiceScopeFactory _scopeFactory;
 
-    public UnitOfWorkFilter(IUnitOfWork uow)
+    public UnitOfWorkFilter(IServiceScopeFactory scopeFactory)
     {
-        _uow = uow;
+        _scopeFactory = scopeFactory;
     }
 
     public void OnPerforming(PerformingContext context)
     {
-        // var scope = _scopeFactory.CreateScope();
-        // context.Items["HangfireScope"] = scope;
+        var scope = _scopeFactory.CreateScope();
+        context.Items["HangfireScope"] = scope;
         
         var jobContext = context.GetAJobParameter<JobContext>();
-        // var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         
         if (jobContext is not null)
-            _uow.UserId = jobContext.UserId;
+            uow.UserId = jobContext.UserId;
 
-        _uow.Begin();
+        uow.Begin();
         
-        Console.WriteLine($"&UnitOfWork: uow in UnitOfWorkFilter.OnPerforming: {_uow.GetHashCode()}");
+        Console.WriteLine($"&UnitOfWork: uow in UnitOfWorkFilter.OnPerforming: {uow.GetHashCode()}");
     }
 
     public void OnPerformed(PerformedContext context)
     {
-        // if (context.Items.TryGetValue("HangfireScope", out var scopeObj) && scopeObj is IServiceScope scope)
-        // {
-            // var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-            
-            var uow = _uow;
+        if (context.Items.TryGetValue("HangfireScope", out var scopeObj) && scopeObj is IServiceScope scope)
+        {
+            var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
             
             if (context.Exception == null)
                 uow.Commit();
             else
                 uow.Rollback();
 
-            // scope.Dispose();
+            scope.Dispose();
 
             Console.WriteLine($"&UnitOfWork: uow in UnitOfWorkFilter.OnPerformed: {uow.GetHashCode()}");
-        // }
+        }
     }
 }
 
