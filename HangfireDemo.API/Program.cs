@@ -10,6 +10,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(Program).Assembly));
 
+builder.Services.AddSingleton<JobActivator, ContextAwareJobActivator>();
+
 // Add Hangfire
 builder.Services.AddHangfire(config => config
     .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
@@ -79,24 +81,52 @@ public class UnitOfWork : IUnitOfWork
 [Serializable]
 public record JobContext(int UserId, string CorrelationId);
 
-public class FilterScopeJobActivator : JobActivator
+public class ContextAwareJobActivator : JobActivator
 {
-    private readonly PerformingContext _context;
+    private readonly IServiceProvider _serviceProvider;
 
-    public FilterScopeJobActivator(PerformingContext context)
+    public ContextAwareJobActivator(IServiceProvider serviceProvider)
     {
-        _context = context;
+        _serviceProvider = serviceProvider;
     }
 
-    public override object ActivateJob(Type jobType)
+    public override JobActivatorScope BeginScope(PerformContext context)
     {
-        if (_context.Items.TryGetValue("HangfireScope", out var scope) && 
-            scope is IServiceScope serviceScope)
+        if (context.Items.TryGetValue("HangfireScope", out var scopeObj) &&
+            scopeObj is IServiceScope existingScope)
         {
-            return serviceScope.ServiceProvider.GetRequiredService(jobType);
+            // Existing scope from filter - don't dispose
+            return new ExistingDependencyScope(existingScope, shouldDispose: false);
         }
-        
-        return base.ActivateJob(jobType);
+
+        // New fallback scope - mark for disposal
+        var newScope = _serviceProvider.CreateScope();
+        return new ExistingDependencyScope(newScope, shouldDispose: true);
+    }
+
+    private class ExistingDependencyScope : JobActivatorScope
+    {
+        private readonly IServiceScope _scope;
+        private readonly bool _shouldDispose;
+
+        public ExistingDependencyScope(IServiceScope scope, bool shouldDispose)
+        {
+            _scope = scope;
+            _shouldDispose = shouldDispose;
+        }
+
+        public override object Resolve(Type type)
+        {
+            return _scope.ServiceProvider.GetRequiredService(type);
+        }
+
+        public override void DisposeScope()
+        {
+            if (_shouldDispose)
+            {
+                _scope.Dispose();
+            }
+        }
     }
 }
 
@@ -115,9 +145,6 @@ public class UnitOfWorkFilter : JobFilterAttribute, IServerFilter
         var scope = _scopeFactory.CreateScope();
         context.Items["HangfireScope"] = scope;
         
-        // Override job activator
-        context.Items["JobActivator"] = new FilterScopeJobActivator(context);
-        
         var jobContext = context.GetAJobParameter<JobContext>();
         var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         
@@ -133,16 +160,22 @@ public class UnitOfWorkFilter : JobFilterAttribute, IServerFilter
     {
         if (context.Items.TryGetValue("HangfireScope", out var scopeObj) && scopeObj is IServiceScope scope)
         {
-            var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+            try
+            {
+                var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+                
+                if (context.Exception == null)
+                    uow.Commit();
+                else
+                    uow.Rollback();
             
-            if (context.Exception == null)
-                uow.Commit();
-            else
-                uow.Rollback();
-
-            scope.Dispose();
-
-            Console.WriteLine($"&UnitOfWork: uow in UnitOfWorkFilter.OnPerformed: {uow.GetHashCode()}");
+                Console.WriteLine($"&UnitOfWork: uow in UnitOfWorkFilter.OnPerformed: {uow.GetHashCode()}");
+            }
+            finally
+            {
+                scope.Dispose();
+                context.Items.Remove("HangfireScope");
+            }
         }
     }
 }
