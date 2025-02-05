@@ -1,5 +1,5 @@
+using HangfireDemo.API.BackgroundJobs;
 using HangfireDemo.API.BackgroundJobs.BuildingBlocks;
-using HangfireDemo.API.Commands;
 using HangfireDemo.API.Data.Abstract;
 using HangfireDemo.API.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -8,21 +8,14 @@ namespace HangfireDemo.API.Controllers;
 
 [ApiController]
 [Route("[controller]")]
-public class JobController : ControllerBase
+public class JobController(IUnitOfWork uow, 
+    IDelayedJobManager jobManager)
+    : ControllerBase
 {
-    private readonly IJobManager _jobManager;
-    private readonly IUnitOfWork _uow;
-
-    public JobController(IUnitOfWork uow, IJobManager jobManager)
-    {
-        _uow = uow;
-        _jobManager = jobManager;
-    }
-
     [HttpPost("delayed")]
     public IActionResult CreateDelayedJob(string data, int userId, string correlationId)
     {
-        Console.WriteLine($"#Creating DelayedJob: uow in controller: {_uow.GetHashCode()}");
+        Console.WriteLine($"#Creating DelayedJob: uow in controller: {uow.GetHashCode()}");
     
         var context = new JobContext(
             userId: userId,
@@ -30,13 +23,33 @@ public class JobController : ControllerBase
         );
         
         context.Headers.Add("X-Request-Token", new Guid().ToString());
-
-        _jobManager.Schedule(
-            new DelayedCommand(data), 
+        
+        jobManager.Schedule(
+            new DemoDelayedJob(data),
             context,
-            TimeSpan.FromSeconds(5)
+            1500
         );
 
-        return Ok(new { context.CorrelationId });
+        return Ok(context.Headers["X-Request-Token"]);
+    }
+    
+    [HttpPost("enqueue")]
+    public IActionResult CreateEnqueuedJob(string data, int userId, string correlationId)
+    {
+        Console.WriteLine($"#Creating EnqueuedJob: uow in controller: {uow.GetHashCode()}");
+    
+        var context = new JobContext(
+            userId: userId,
+            correlationId: correlationId
+        );
+        
+        context.Headers.Add("X-Request-Token", new Guid().ToString());
+        
+        jobManager.Enqueue(
+            new DemoDelayedJob(data),
+            context
+        );
+
+        return Ok(context.Headers["X-Request-Token"]);
     }
 }

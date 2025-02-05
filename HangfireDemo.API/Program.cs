@@ -1,8 +1,6 @@
 using Hangfire;
-using HangfireDemo.API;
 using HangfireDemo.API.BackgroundJobs;
 using HangfireDemo.API.BackgroundJobs.BuildingBlocks;
-using HangfireDemo.API.Commands;
 using HangfireDemo.API.Configs.Hangfire;
 using HangfireDemo.API.Data.Abstract;
 using HangfireDemo.API.Data.Implementations;
@@ -49,8 +47,11 @@ builder.Services.AddHangfireServer(options => {
 // Register services
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<IJobManager, HangfireJobManager>();
-builder.Services.AddScoped<IBackgroundJob<RecurringCommand>, RecurringJobService>();
-builder.Services.AddScoped<IBackgroundJob<DelayedCommand>, DelayedJobService>();
+builder.Services.AddScoped<IRecurrenceJobManager, HangfireRecurrenceJobManager>();
+builder.Services.AddScoped<IDelayedJobManager, HangfireDelayedJobManager>();
+
+builder.Services.AddScoped<IRecurrenceJobHandlerBase<DemoRecurrenceJob>, DemoRecurrenceJobHandler>();
+builder.Services.AddScoped<IDelayedJobHandlerBase<DemoDelayedJob>, DemoDelayedJobHandler>();
 
 builder.Services.AddSingleton<ErrorLoggingFilter>();
 builder.Services.AddSingleton<UnitOfWorkFilter>();
@@ -77,18 +78,16 @@ app.UseHangfireDashboard();
 app.MapControllers();
 
 // Seed recurring job
-
 using (var scope = app.Services.CreateScope())
 {
-    var jobManager = scope.ServiceProvider.GetRequiredService<IJobManager>();
+    var jobManager = scope.ServiceProvider.GetRequiredService<IRecurrenceJobManager>();
     
     jobManager.AddOrUpdateRecurring(
         "recurring-demo",
-        new RecurringCommand(),
+        new DemoRecurrenceJob(new Random().Next(1, 100)),
         new JobContext(999, "system"),
         "*/1 * * * *"
     );
 }
-
 
 app.Run();
