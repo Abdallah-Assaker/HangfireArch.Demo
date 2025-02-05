@@ -5,6 +5,7 @@ using MediatR;
 
 namespace HangfireDemo.API.BackgroundJobs;
 
+[DisplayName("Demo recurrence job")]
 public record DemoRecurrenceJob(int Number) : IRecurrenceJob;
 
 public class DemoRecurrenceJobHandler(IUnitOfWork uow, IMediator mediator) 

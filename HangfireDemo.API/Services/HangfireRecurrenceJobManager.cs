@@ -1,9 +1,12 @@
+using System.ComponentModel;
+using System.Reflection;
 using Hangfire;
 using HangfireDemo.API.BackgroundJobs.BuildingBlocks;
 
 namespace HangfireDemo.API.Services;
 
 public class HangfireRecurrenceJobManager(
+    IServiceProvider serviceProvider,
     IRecurringJobManager recurringJobManager,
     ILogger<HangfireRecurrenceJobManager> logger)
     : IRecurrenceJobManager
@@ -16,10 +19,12 @@ public class HangfireRecurrenceJobManager(
         string queue = "default"
     ) where TJob : IRecurrenceJob
     {
-        recurringJobManager.AddOrUpdate<IRecurrenceJobHandlerBase<TJob>>(
+        var jobName = GetJobName(job);
+        
+        recurringJobManager.AddOrUpdate(
             jobId,
             queue,
-            x => x.Execute(job, context),
+            () => ExecuteJob(job, context, jobName),
             cron,
             new RecurringJobOptions 
             {
@@ -30,40 +35,29 @@ public class HangfireRecurrenceJobManager(
         
         logger.LogInformation("Updated recurring job {JobId} with schedule {Cron}", jobId, cron);
     }
-}
-
-public class HangfireDelayedJobManager(
-    IBackgroundJobClient backgroundJobManager,
-    ILogger<HangfireDelayedJobManager> logger)
-    : IDelayedJobManager
-{
-    public void Schedule<TJob>(
-        TJob job, 
-        JobContext context, 
-        int delayedMilliseconds = 0, 
-        string queue = "default"
-    ) where TJob : IDelayedJob
+    
+    private static string GetJobName<TJob>(TJob job) where TJob : IRecurrenceJob
     {
-        backgroundJobManager.Schedule<IDelayedJobHandlerBase<TJob>>(
-            queue,
-            x => x.Execute(job, context),
-            TimeSpan.FromMilliseconds(delayedMilliseconds)
-        );
-        
-        logger.LogInformation("Scheduled job {Id} with delay {Delay}", nameof(job), delayedMilliseconds);
+        var jobName = job.GetType().GetTypeInfo().GetCustomAttribute<DisplayNameAttribute>()?.DisplayName ?? job.GetType().Name;
+        return jobName;
     }
 
-    public void Enqueue<TJob>(
-        TJob job, 
-        JobContext context, 
-        string queue = "default"
-    ) where TJob : IDelayedJob
+    // public Func<long, int> DelayInSecondsByAttemptFunc
+    // {
+    //     get { lock (_lockObject) { return _delayInSecondsByAttemptFunc;} }
+    //     set
+    //     {
+    //         if (value == null) throw new ArgumentNullException(nameof(value));
+    //         lock (_lockObject) { _delayInSecondsByAttemptFunc = value; }
+    //     }
+    // }
+    
+    [DisplayName("{2}")]
+    // ReSharper disable once MemberCanBePrivate.Global
+    public Task ExecuteJob<TJob>(TJob job, JobContext context, string jobName) where TJob : IRecurrenceJob
     {
-        backgroundJobManager.Enqueue<IDelayedJobHandlerBase<TJob>>(
-            queue,
-            x => x.Execute(job, context)
-        );
-        
-        logger.LogInformation("Enqueued job {Id}", nameof(job));
+        var handler = serviceProvider.GetRequiredService<IRecurrenceJobHandlerBase<TJob>>();
+        return handler.Execute(job, context);
+
     }
 }

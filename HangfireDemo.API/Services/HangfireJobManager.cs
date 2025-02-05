@@ -30,12 +30,3 @@ public class HangfireJobManager(
         recurrenceJobManager.AddOrUpdateRecurring(jobId, job, context, cron, queue);
     }
 }
-
-
-
-
-
-
-
-
-

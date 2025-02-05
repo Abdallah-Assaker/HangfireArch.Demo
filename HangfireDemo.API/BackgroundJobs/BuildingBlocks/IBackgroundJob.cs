@@ -1,5 +1,3 @@
-using System.ComponentModel;
-
 namespace HangfireDemo.API.BackgroundJobs.BuildingBlocks;
 
 internal interface IBackgroundJobHandlerBase<in TJob> where TJob : IJob

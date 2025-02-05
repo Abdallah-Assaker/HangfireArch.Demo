@@ -31,7 +31,8 @@ builder.Services.AddHangfire(config => config
             NamingStrategy = new CamelCaseNamingStrategy()
         }
     })
-    .UseSqlServerStorage(builder.Configuration.GetConnectionString("Hangfire")));
+    .UseSqlServerStorage(builder.Configuration.GetConnectionString("Hangfire"))
+    .UseColouredConsoleLogProvider());
 
 // Configure Hangfire Server
 builder.Services.AddHangfireServer(options => {
@@ -46,9 +47,12 @@ builder.Services.AddHangfireServer(options => {
 
 // Register services
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+
 builder.Services.AddScoped<IJobManager, HangfireJobManager>();
 builder.Services.AddScoped<IRecurrenceJobManager, HangfireRecurrenceJobManager>();
+builder.Services.AddScoped<HangfireRecurrenceJobManager>();
 builder.Services.AddScoped<IDelayedJobManager, HangfireDelayedJobManager>();
+builder.Services.AddScoped<HangfireDelayedJobManager>();
 
 builder.Services.AddScoped<IRecurrenceJobHandlerBase<DemoRecurrenceJob>, DemoRecurrenceJobHandler>();
 builder.Services.AddScoped<IDelayedJobHandlerBase<DemoDelayedJob>, DemoDelayedJobHandler>();
@@ -58,36 +62,34 @@ builder.Services.AddSingleton<UnitOfWorkFilter>();
 
 var app = builder.Build();
 
-using (var scope = app.Services.CreateScope())
-{
-    var serviceProvider = scope.ServiceProvider;
+GlobalJobFilters.Filters.Add(
+    app.Services.GetRequiredService<ErrorLoggingFilter>(),
+    order: 0
+);
 
-    GlobalJobFilters.Filters.Add(
-        serviceProvider.GetRequiredService<ErrorLoggingFilter>(),
-        order: 0
-    );
-    
-    GlobalJobFilters.Filters.Add(
-        serviceProvider.GetRequiredService<UnitOfWorkFilter>(),
-        order: 1
-    );
-}
+GlobalJobFilters.Filters.Add(
+    app.Services.GetRequiredService<UnitOfWorkFilter>(),
+    order: 1
+);
 
 // Middleware pipeline
 app.UseHangfireDashboard();
 app.MapControllers();
 
 // Seed recurring job
-using (var scope = app.Services.CreateScope())
+// AddOrUpdateRecurringJobs(app);
+
+app.Run();
+
+void AddOrUpdateRecurringJobs(WebApplication webApplication)
 {
+    using var scope = webApplication.Services.CreateScope();
     var jobManager = scope.ServiceProvider.GetRequiredService<IRecurrenceJobManager>();
     
     jobManager.AddOrUpdateRecurring(
         "recurring-demo",
         new DemoRecurrenceJob(new Random().Next(1, 100)),
         new JobContext(999, "system"),
-        "*/1 * * * *"
+        "*/20 * * * * *"
     );
 }
-
-app.Run();

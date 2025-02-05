@@ -5,6 +5,7 @@ using MediatR;
 
 namespace HangfireDemo.API.BackgroundJobs;
 
+[DisplayName("Demo delayed job")]
 public record DemoDelayedJob(string Data) : IDelayedJob;
 
 public class DemoDelayedJobHandler(IUnitOfWork uow, IMediator mediator) 
