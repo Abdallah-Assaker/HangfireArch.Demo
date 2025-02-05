@@ -52,7 +52,13 @@ public class HangfireDelayedJobManager(
         return jobName;
     }
 
-    [DisplayName("{2}")]
+    [DisplayName("{2}"),
+     AutomaticRetry(Attempts = 3, 
+        DelaysInSeconds = [1],
+        OnAttemptsExceeded = AttemptsExceededAction.Fail, //Failed jobs do not become expired to allow you to re-queue them without any time pressure. You should re-queue or delete them manually, or apply AutomaticRetry(OnAttemptsExceeded = AttemptsExceededAction.Delete) attribute to delete them automatically.
+        LogEvents = true 
+    // ,ExceptOn = Custom Business Exception
+    )]
     // ReSharper disable once MemberCanBePrivate.Global
     public Task ExecuteJob<TJob>(TJob job, JobContext context, string jobName) where TJob : IDelayedJob
     {
