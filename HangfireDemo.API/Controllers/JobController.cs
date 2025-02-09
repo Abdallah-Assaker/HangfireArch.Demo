@@ -9,7 +9,8 @@ namespace HangfireDemo.API.Controllers;
 [ApiController]
 [Route("[controller]")]
 public class JobController(IUnitOfWork uow, 
-    IDelayedJobManager jobManager)
+    IDelayedJobManager jobManager,
+    IServiceProvider serviceProvider)
     : ControllerBase
 {
     [HttpPost("delayed")]
@@ -51,5 +52,12 @@ public class JobController(IUnitOfWork uow,
         );
 
         return Ok(context.Headers["X-Request-Token"]);
+    }
+    
+    [HttpGet("test")]
+    public IActionResult Test()
+    {
+        Console.WriteLine($"#ServiceProvider: {serviceProvider.GetHashCode()}");
+        return Ok();
     }
 }

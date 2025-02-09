@@ -41,7 +41,7 @@ builder.Services.AddHangfireServer(options => {
 });
 
 builder.Services.AddHangfireServer(options => {
-    options.Queues = new[] { "io-bound" };
+    options.Queues = ["io-bound"];
     options.ServerName = "IO_Worker";
 });
 
@@ -54,22 +54,21 @@ builder.Services.AddScoped<HangfireRecurrenceJobManager>();
 builder.Services.AddScoped<IDelayedJobManager, HangfireDelayedJobManager>();
 builder.Services.AddScoped<HangfireDelayedJobManager>();
 
+builder.Services.AddScoped<IHangfireJobFilter, ErrorLoggingFilter>();
+builder.Services.AddScoped<IHangfireJobFilter, UserStateInitializerFilter>();
+builder.Services.AddScoped<IHangfireJobFilter, TransactionFilter>();
+builder.Services.AddScoped<IHangfireJobFilter, EventPublisherFilter>();
+
 builder.Services.AddScoped<IRecurrenceJobHandlerBase<DemoRecurrenceJob>, DemoRecurrenceJobHandler>();
 builder.Services.AddScoped<IDelayedJobHandlerBase<DemoDelayedJob>, DemoDelayedJobHandler>();
 
-builder.Services.AddSingleton<ErrorLoggingFilter>();
-builder.Services.AddSingleton<UnitOfWorkFilter>();
+builder.Services.AddSingleton<HangfireJobFilter>();
 
 var app = builder.Build();
 
 GlobalJobFilters.Filters.Add(
-    app.Services.GetRequiredService<ErrorLoggingFilter>(),
+    app.Services.GetRequiredService<HangfireJobFilter>(),
     order: 0
-);
-
-GlobalJobFilters.Filters.Add(
-    app.Services.GetRequiredService<UnitOfWorkFilter>(),
-    order: 1
 );
 
 // Middleware pipeline
@@ -77,7 +76,7 @@ app.UseHangfireDashboard();
 app.MapControllers();
 
 // Seed recurring job
-// AddOrUpdateRecurringJobs(app);
+AddOrUpdateRecurringJobs(app);
 
 app.Run();
 

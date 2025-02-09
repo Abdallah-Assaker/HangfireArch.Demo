@@ -13,12 +13,9 @@ public class DemoRecurrenceJobHandler(IUnitOfWork uow, IMediator mediator)
 {
     protected override async Task Handle(DemoRecurrenceJob job)
     {
-        Console.WriteLine($"@RecurringJob: Processing recurring job ({job.Number}) for user {uow.UserId}, [{uow.GetHashCode()}]");
-        await Task.Delay(100);
+        Console.WriteLine($"DemoRecurrenceJob : Handle : Mediator: {mediator.GetHashCode()} UOW: {uow.GetHashCode()}");
+        await Task.Delay(1500);
         
-        Console.WriteLine($"@RecurringJob: Mediator: {mediator.GetHashCode()}");
-        
-        // Simulate error
         var rnd = new Random();
         var error = rnd.Next(1, 10);
         

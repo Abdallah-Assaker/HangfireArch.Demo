@@ -13,10 +13,9 @@ public class DemoDelayedJobHandler(IUnitOfWork uow, IMediator mediator)
 {
     protected override async Task Handle(DemoDelayedJob job)
     {
-        Console.WriteLine($"#DelayedJob: Processing delayed job ({job.Data}) for user {uow.UserId}, [{uow.GetHashCode()}]");
+        Console.WriteLine($"DemoDelayedJob : Handle : Mediator: {mediator.GetHashCode()} UOW: {uow.GetHashCode()}");
+
         await Task.Delay(100);
-        
-        Console.WriteLine($"#DelayedJob: Mediator: {mediator.GetHashCode()}");
         
         // Simulate error
         if (job.Data == "error")
