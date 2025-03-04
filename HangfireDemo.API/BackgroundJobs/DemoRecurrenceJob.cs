@@ -1,11 +1,11 @@
-using System.ComponentModel;
 using HangfireDemo.API.BackgroundJobs.BuildingBlocks;
+using HangfireDemo.API.Configs.Attributes.Hangfire;
 using HangfireDemo.API.Data.Abstract;
 using MediatR;
 
 namespace HangfireDemo.API.BackgroundJobs;
 
-[DisplayName("Demo recurrence job")]
+[JobConfiguration("Demo recurrence job", retryAttempts: 3)]
 public record DemoRecurrenceJob(int Number) : IRecurrenceJob;
 
 public class DemoRecurrenceJobHandler(IUnitOfWork uow, IMediator mediator) 
@@ -19,7 +19,7 @@ public class DemoRecurrenceJobHandler(IUnitOfWork uow, IMediator mediator)
         var rnd = new Random();
         var error = rnd.Next(1, 10);
         
-        if (error % 5 == 0)
+        if (error % 5 == 0 || error % 3 == 0)
             throw new InvalidOperationException($"@RecurringJob: Demo error: {error}");
     }
 }

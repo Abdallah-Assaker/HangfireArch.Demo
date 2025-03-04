@@ -32,6 +32,7 @@ builder.Services.AddHangfire(config => config
         }
     })
     .UseSqlServerStorage(builder.Configuration.GetConnectionString("Hangfire"))
+    .UseFilter(new AutomaticRetryAttribute { Attempts = 0 })
     .UseColouredConsoleLogProvider());
 
 // Configure Hangfire Server
@@ -62,9 +63,15 @@ builder.Services.AddScoped<IHangfireJobFilter, EventPublisherFilter>();
 builder.Services.AddScoped<IRecurrenceJobHandlerBase<DemoRecurrenceJob>, DemoRecurrenceJobHandler>();
 builder.Services.AddScoped<IDelayedJobHandlerBase<DemoDelayedJob>, DemoDelayedJobHandler>();
 
+builder.Services.AddSingleton<JobConfigurationFilter>();
 builder.Services.AddSingleton<HangfireJobFilter>();
 
 var app = builder.Build();
+
+GlobalJobFilters.Filters.Add(
+    app.Services.GetRequiredService<JobConfigurationFilter>(),
+    order: -10 // Ensure it runs before other filters
+);
 
 GlobalJobFilters.Filters.Add(
     app.Services.GetRequiredService<HangfireJobFilter>(),

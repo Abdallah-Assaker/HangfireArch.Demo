@@ -1,11 +1,17 @@
-using System.ComponentModel;
+using Hangfire;
 using HangfireDemo.API.BackgroundJobs.BuildingBlocks;
+using HangfireDemo.API.Configs.Attributes.Hangfire;
 using HangfireDemo.API.Data.Abstract;
 using MediatR;
 
 namespace HangfireDemo.API.BackgroundJobs;
 
-[DisplayName("Demo delayed job")]
+[JobConfiguration("Demo delayed job", 
+    retryAttempts: 3, 
+    queue: "io-bound", 
+    retryDelaysInSeconds: [2], 
+    onAttemptsExceeded: AttemptsExceededAction.Fail, 
+    exceptOn: [typeof(NotImplementedException)])]
 public record DemoDelayedJob(string Data) : IDelayedJob;
 
 public class DemoDelayedJobHandler(IUnitOfWork uow, IMediator mediator) 
@@ -20,5 +26,8 @@ public class DemoDelayedJobHandler(IUnitOfWork uow, IMediator mediator)
         // Simulate error
         if (job.Data == "error")
             throw new InvalidOperationException("#DelayedJob: Demo error");
+        
+        if (job.Data == "not-implemented")
+            throw new NotImplementedException("#DelayedJob: Demo not implemented");
     }
 }

@@ -1,8 +1,8 @@
 using System.ComponentModel;
-using System.Reflection;
 using Hangfire;
 using Hangfire.Annotations;
 using HangfireDemo.API.BackgroundJobs.BuildingBlocks;
+using HangfireDemo.API.Helpers.Extensions;
 
 namespace HangfireDemo.API.Services;
 
@@ -19,14 +19,18 @@ public class HangfireDelayedJobManager(
         string queue = "default"
     ) where TJob : IDelayedJob
     {
-        var jobName = GetJobName(job);
+        var configuredDisplayName = job.GetJobConfigurationDisplayName();
+        var configuredQueue = job.GetJobConfigurationQueue();
         
+        // Use configured queue if the caller didn't specify one explicitly
+        if (queue == "default" && configuredQueue != "default")
+            queue = configuredQueue;
+            
         backgroundJobManager.Schedule(
             queue,
-            () => ExecuteJob(job, context, jobName),
+            () => ExecuteJob(job, context, configuredDisplayName),
             TimeSpan.FromMilliseconds(delayedMilliseconds)
         );
-        
         logger.LogInformation("Scheduled job {Id} with delay {Delay}", nameof(job), delayedMilliseconds);
     }
 
@@ -36,34 +40,26 @@ public class HangfireDelayedJobManager(
         string queue = "default"
     ) where TJob : IDelayedJob
     {
-        var jobName = GetJobName(job);
+        var configuredDisplayName = job.GetJobConfigurationDisplayName();
+        var configuredQueue = job.GetJobConfigurationQueue();
         
+        // Use configured queue if the caller didn't specify one explicitly
+        if (queue == "default" && configuredQueue != "default")
+            queue = configuredQueue;
+            
         backgroundJobManager.Enqueue(
             queue,
-            () => ExecuteJob(job, context, jobName)
+            () => ExecuteJob(job, context, configuredDisplayName)
         );
-        
         logger.LogInformation("Enqueued job {Id}", nameof(job));
     }
-    
-    private static string GetJobName<TJob>(TJob job) where TJob : IDelayedJob
-    {
-        var jobName = job.GetType().GetTypeInfo().GetCustomAttribute<DisplayNameAttribute>()?.DisplayName ?? job.GetType().Name;
-        return jobName;
-    }
 
-    [DisplayName("{2}"),
-     AutomaticRetry(Attempts = 3, 
-        DelaysInSeconds = [1],
-        OnAttemptsExceeded = AttemptsExceededAction.Fail, //Failed jobs do not become expired to allow you to re-queue them without any time pressure. You should re-queue or delete them manually, or apply AutomaticRetry(OnAttemptsExceeded = AttemptsExceededAction.Delete) attribute to delete them automatically.
-        LogEvents = true 
-    // ,ExceptOn = Custom Business Exception
-    )]
-    // ReSharper disable once MemberCanBePrivate.Global
+    // The ExecuteJob method without hardcoded attributes
+    [DisplayName("{2}")]
     public Task ExecuteJob<TJob>(TJob job, JobContext context, string jobName) where TJob : IDelayedJob
     {
+        // The attributes are now applied to the job class itself, not this method
         var handler = serviceProvider.GetRequiredService<IDelayedJobHandlerBase<TJob>>();
         return handler.Execute(job, context);
-
     }
 }
